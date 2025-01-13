@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import os
 import logging
 import re
+import unicodedata
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,6 +51,16 @@ end_date = datetime(2020, 1, 2)
 current_date = start_date
 
 dataset = []
+
+def clean_text(text):
+    # Normalize text to replace Unicode characters with ASCII equivalents
+    text = unicodedata.normalize("NFKD", text)
+    # Replace smart quotes, dashes, and ellipses
+    text = text.replace('\u2019', "'").replace('\u201c', '"').replace('\u201d', '"')
+    text = text.replace('\u2014', '—').replace('\u2013', '-').replace('\u2026', '...')
+    # Normalize spaces
+    text = ' '.join(text.split())  # Removes extra spaces and normalizes whitespace
+    return text
 
 while current_date <= end_date:
     logger.info(f"Processing date: {current_date.strftime('%Y-%m-%d')} ({len(dataset) + 1}/{(end_date - start_date).days + 1})")
@@ -102,10 +113,19 @@ while current_date <= end_date:
         prompt = (
             f"You MUST write a transcript in British English, as if spoken by a 22-year-old man living in Sheffield, UK. The language MUST reflect the natural tone and reading level of someone navigating early adulthood, balancing work, hobbies like badminton and fitness, and maintaining relationships with friends, family, and colleagues, in first person.\n\n"
             f"The date is {timestamp.strftime('%A, %d %B %Y')}. Take into consideration British Weather at this time of year.\n\n"
+
             f"The entry MUST follow these tone instructions: {' '.join(tone_sentence)}. "
             f"Integrate interactions into the narrative with the following people. Ensure their actions, conversations, or significance to the day are contextually woven into the story, without necessarily mentioning their role directly: {', '.join(mentioned_names)}. "
             f"The entry must be exactly {word_count} words long."
         )
+
+        if random.random() < 0.2:
+            day_inclusion = "DO mention the day of the week in the transcript."
+        else:
+            day_inclusion = "DON'T mention the day of the week in the transcript."
+        # Append the decision to the prompt
+        prompt += f" {day_inclusion}"
+
         try:
             response = openai.ChatCompletion.create(
                 model="gpt-4o-mini",
@@ -116,15 +136,8 @@ while current_date <= end_date:
                 max_tokens=1500
             )
             journal_entry = response["choices"][0]["message"]["content"].strip()
-            journal_entry = journal_entry.replace('\u2019', "'")  # Replace smart apostrophe
-            journal_entry = journal_entry.replace('\u201c', '"').replace('\u201d', '"')  # Handle smart double quotes
-            journal_entry = journal_entry.replace('\u2014', '—')  # Replace em dash
-            journal_entry = journal_entry.replace('\u2013', '-')  # Replace en dash
-            journal_entry = journal_entry.replace('\u2026', '...')  # Replace ellipsis
-            journal_entry = re.sub(r'(?<=[a-zA-Z0-9]),', ', ', journal_entry)  # Ensure space after commas
-            journal_entry = re.sub(r'(?<=[a-zA-Z0-9])\.(?=[a-zA-Z])', '. ', journal_entry)  # Ensure space after periods
-            journal_entry = re.sub(r'\s+', ' ', journal_entry).strip()  # Normalize whitespace
-            print(f"Generated Transcript: {journal_entry}\n")  # Print transcript to console
+            journal_entry = clean_text(journal_entry)
+            print(f"Generated Transcript: {journal_entry}\n")
         except Exception as e:
             journal_entry = f"Error generating entry: {e}"
 
